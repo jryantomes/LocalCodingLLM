@@ -24,6 +24,18 @@ Two Community Applications plugins, both of which need a reboot:
 - **Docker Compose Manager** — gives you `docker compose` on the Unraid
   terminal.
 
+Check your Docker vDisk before you start. These three images need roughly
+15GB unpacked, and on Unraid images go into `docker.img`, a fixed-size file
+that is commonly 20GB and often already mostly spent on containers you run
+today. When it fills, the pull dies partway with `no space left on device`,
+which reads as a disk problem but is only this one file being full. `docker
+system df` shows what is in there. To make room, raise **Docker vDisk size**
+under Settings > Docker, with **Enable Docker** set to No while you change it;
+existing containers survive.
+
+That limit is separate from where the models go, and the models are much the
+larger of the two.
+
 You also want somewhere real for the models to live. A 30B model at Q4 is about
 19GB and you will end up with more than one. If your `appdata` share is on a
 cache pool or SSD, you are fine; if it is on the array, expect a slow first load
