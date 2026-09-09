@@ -27,16 +27,26 @@ docker ps --format '{{.Names}}' | grep -qx ollama \
 
 # Ask the container, not the host: what matters is the VRAM Ollama can see,
 # which is what NVIDIA_VISIBLE_DEVICES decided.
-VRAM_MB="$(docker exec ollama nvidia-smi \
+#
+# The total across every visible card is the budget, not the largest one.
+# Ollama splits a model's layers over all the GPUs it can see, so two 8GB
+# cards will hold a model that no single one of them could. An earlier version
+# of this took the largest card and picked a model a size too small on exactly
+# that hardware.
+GPU_MEM="$(docker exec ollama nvidia-smi \
              --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null \
-           | sort -rn | head -1 | tr -d '[:space:]')"
+           | tr -d '\r')"
 
-if ! [[ "$VRAM_MB" =~ ^[0-9]+$ ]]; then
+GPU_COUNT="$(printf '%s\n' "$GPU_MEM" | grep -c '^[0-9][0-9]*$' || true)"
+VRAM_MB="$(printf '%s\n' "$GPU_MEM" | awk '/^[0-9]+$/ {sum += $1} END {print sum + 0}')"
+
+if ! [[ "$VRAM_MB" =~ ^[0-9]+$ ]] || [ "$VRAM_MB" -eq 0 ]; then
   warn "Could not read GPU memory from inside the container."
   warn "That usually means the nvidia runtime is not attached - the models will"
   warn "still download, but they will run on CPU and be far too slow to code with."
   warn "Check 'docker exec ollama nvidia-smi' before you blame the model."
   VRAM_MB=0
+  GPU_COUNT=0
 fi
 
 VRAM_GB=$(( VRAM_MB / 1024 ))
@@ -66,7 +76,15 @@ else
 fi
 
 if [ "$#" -lt 1 ]; then
-  say "Detected ${VRAM_GB}GB of VRAM. Chat model: $CHAT_MODEL"
+  if [ "${GPU_COUNT:-0}" -gt 1 ]; then
+    say "Detected ${VRAM_GB}GB of VRAM across ${GPU_COUNT} GPUs. Chat model: $CHAT_MODEL"
+    warn "A model larger than one card is split over the others across PCIe."
+    warn "That works, and costs some speed against the same model on a single"
+    warn "card of the same total size. If it feels slow, ./pull-models.sh with a"
+    warn "smaller model will fit on one card and run faster."
+  else
+    say "Detected ${VRAM_GB}GB of VRAM. Chat model: $CHAT_MODEL"
+  fi
   if [ -n "${SMALL_CARD:-}" ]; then
     warn "That is a small card for this. The 7B model is the smallest that is"
     warn "genuinely useful for code, but expect it to be slow and weak on"

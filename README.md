@@ -110,6 +110,12 @@ run `docker compose up -d` again.
 sizes below are the weights at Q4_K_M; the context window costs more on top,
 which is why each tier leaves headroom rather than filling the card.
 
+On a multi-GPU box it is the total that counts, not the biggest card. Ollama
+splits a model's layers across every GPU it can see, so two 8GB cards will hold
+a model neither could alone. That split runs over PCIe and costs some speed
+against one card of the same total size, but it is far better than the
+alternative of spilling into system RAM.
+
 | VRAM | Chat model | Notes |
 |---|---|---|
 | 40GB+ | `qwen3-coder:30b` plus `devstral:24b` | Devstral is trained for multi-file agentic edits, so it is worth having both and switching. |
