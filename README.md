@@ -169,13 +169,28 @@ reason: the linuxserver image sets `HOME` to `/config`, which is a persisted
 volume. The installer writes to `~/.local`, so the install and its login
 survive both restarts and image updates without any extra plumbing.
 
-In a code-server terminal:
+This has to run **inside the code-server container**, not on the Unraid host.
+Run it on the host and it installs into `/root`, which Unraid rebuilds in RAM
+on every boot, so it disappears at the next restart. Two ways in.
+
+From the Unraid terminal, open a shell in the container:
 
 ```
-curl -fsSL https://claude.ai/install.sh | bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-exec bash
-claude
+docker exec -it -u abc -e HOME=/config code-server bash
+```
+
+Or open code-server in your browser and use its built-in terminal, under
+Terminal > New Terminal. Either way, confirm you are in the right place before
+installing. This must print `/config`:
+
+```
+echo $HOME
+```
+
+Then install, as one line so it survives a paste that loses newlines:
+
+```
+curl -fsSL https://claude.ai/install.sh | bash && export PATH="$HOME/.local/bin:$PATH" && echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc" && claude
 ```
 
 The first `claude` run prints a URL. Open it in your own browser, approve, and
