@@ -123,6 +123,15 @@ alternative of spilling into system RAM.
 | 15–22GB | `qwen2.5-coder:14b` | The 30B fits a 16GB card only by pushing its context into system RAM, which costs more speed than the larger model wins back. |
 | under 15GB | `qwen2.5-coder:7b` | Usable, noticeably weaker at anything multi-file. |
 
+A measured note on Devstral, since it is the tempting choice at the 16GB mark
+and it does not work there. On two 8GB cards, `devstral:24b` at Q4 loads to
+17GB with a 32k context and 16GB at 16k, leaving 23% and 17% of the model on
+the CPU respectively. Roughly 14GB of weights plus the split across two cards
+plus compute buffers does not fit 16GB, and the context is not what is
+overflowing, so shrinking it does not rescue the situation. Below about 24GB,
+prefer `qwen2.5-coder:14b`: it is 9GB, sits entirely on the GPU with the full
+32k context, and is far faster than a larger model paying for CPU offload.
+
 To override, name one yourself:
 
 ```
