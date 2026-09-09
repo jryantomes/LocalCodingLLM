@@ -1,0 +1,146 @@
+# A local coding agent for Unraid: Ollama holds the models on the GPU, Open
+# WebUI is the chat front end, and code-server is a browser VS Code with the
+# Continue extension pointed at Ollama over the compose network.
+#
+# Nothing here publishes to the internet. The ports land on your LAN, and what
+# keeps them off the outside is your router, which should not be forwarding
+# any of them.
+
+name: unraid-llm
+
+services:
+  # The model server. Everything else talks to this and nothing else needs a
+  # GPU, so this is the only service with the nvidia runtime on it.
+  ollama:
+    image: ollama/ollama:${OLLAMA_TAG:-latest}
+    container_name: ollama
+    restart: unless-stopped
+    networks: [llm]
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      # Models live here and they are large. Point APPDATA at a cache-backed
+      # or SSD share if you have one; pulling 20GB onto spinning disk and then
+      # loading it every cold start is the slowest part of this whole setup.
+      - ${APPDATA:-/mnt/user/appdata}/ollama:/root/.ollama
+
+    # Unraid's Nvidia Driver plugin registers `nvidia` as a Docker runtime, so
+    # this is the form that matches the rest of Unraid's own templates. If your
+    # Docker rejects it, comment this line out and use the `deploy:` block at
+    # the bottom of this service instead - they do the same job.
+    runtime: nvidia
+
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+
+      # `all` hands over every GPU in the box. To pin one card, put its UUID
+      # here instead - `nvidia-smi -L` prints them as GPU-xxxxxxxx-....
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+      # Ollama's own default context is 4096 tokens, which is far too small to
+      # code with - a couple of open files will overflow it and the model will
+      # silently forget the top of its own prompt. This raises the floor for
+      # every model. Lower it if you are short on VRAM; the KV cache grows with
+      # this number, not with the model size.
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-32768}
+
+      # How long a model stays resident after the last request. The default of
+      # 5m means a coding session that pauses for coffee pays the full reload.
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+
+      # Flash attention plus a quantised KV cache. Together these cut the
+      # memory the context costs by roughly half, which is what makes a 32k
+      # window affordable on a 24GB card. Set KV_CACHE_TYPE to f16 if you see
+      # quality drop off on long contexts.
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
+
+      # Chat and autocomplete are different models and both want to be resident
+      # at once, or every keystroke fights the chat model for the card.
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-2}
+
+    healthcheck:
+      # The image ships no curl, but it does ship the client, and `ollama list`
+      # only answers once the server behind it is up.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+    # The portable spelling of the same GPU request. Use this OR `runtime:
+    # nvidia` above, not both.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # The chat interface. This is the thing you open when you want to talk to a
+  # model rather than edit code with one.
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_TAG:-main}
+    container_name: open-webui
+    restart: unless-stopped
+    networks: [llm]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${OPENWEBUI_PORT:-3000}:8080"
+    volumes:
+      - ${APPDATA:-/mnt/user/appdata}/open-webui:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_NAME=${WEBUI_NAME:-Unraid LLM}
+
+      # Left on deliberately. The first account you create becomes the admin,
+      # so make it yours, then set ENABLE_SIGNUP=false in .env and bring the
+      # stack back up - otherwise anyone on your LAN can claim an account.
+      - WEBUI_AUTH=true
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-true}
+
+      # Without a fixed key every restart invalidates your login session.
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?run ./setup.sh, or set WEBUI_SECRET_KEY in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Browser VS Code, carrying the Continue extension. This is the coding agent
+  # proper: it reads and writes the files under PROJECTS_DIR and asks Ollama
+  # what to do with them.
+  code-server:
+    image: lscr.io/linuxserver/code-server:${CODESERVER_TAG:-latest}
+    container_name: code-server
+    restart: unless-stopped
+    networks: [llm]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:${CODESERVER_PORT:-8443}:8443"
+    volumes:
+      - ${APPDATA:-/mnt/user/appdata}/code-server:/config
+      # Your actual code. This is the only path the agent can edit, which is
+      # the point - keep it a dedicated share rather than /mnt/user.
+      - ${PROJECTS_DIR:-/mnt/user/projects}:/config/workspace
+    environment:
+      # 99:100 is nobody:users, which is what Unraid shares are owned by.
+      - PUID=${PUID:-99}
+      - PGID=${PGID:-100}
+      - TZ=${TZ:-Etc/UTC}
+      # No default on purpose. Compose refuses to start rather than quietly
+      # putting an unauthenticated editor on your network.
+      - PASSWORD=${CODESERVER_PASSWORD:?set CODESERVER_PASSWORD in .env}
+      - DEFAULT_WORKSPACE=/config/workspace
+
+networks:
+  llm:
+    name: llm
+    driver: bridge

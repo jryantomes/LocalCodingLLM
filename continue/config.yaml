@@ -1,0 +1,58 @@
+# Continue's configuration, copied into the code-server container by setup.sh.
+#
+# Three models do three different jobs. The chat model is the big one you argue
+# with about design; autocomplete is a small base model that has to answer
+# between keystrokes, so it cannot be the big one; embeddings index the
+# codebase so @codebase can find things. Ollama holds all three, which is why
+# OLLAMA_MAX_LOADED_MODELS is 2 rather than 1 - chat and autocomplete both want
+# to stay resident.
+#
+# apiBase is the container name, not an IP. code-server and ollama share a
+# compose network and resolve each other by name, so this keeps working when
+# the server's LAN address changes.
+
+name: unraid-local
+version: 1.0.0
+schema: v1
+
+models:
+  - name: Chat
+    provider: ollama
+    model: PLACEHOLDER_CHAT_MODEL
+    apiBase: http://ollama:11434
+    roles:
+      - chat
+      - edit
+      - apply
+    defaultCompletionOptions:
+      # Keep this at or below OLLAMA_CONTEXT_LENGTH in .env. Continue will
+      # happily ask for more than the server was told to allow, and the
+      # overflow is dropped silently from the top of the prompt.
+      contextLength: 32768
+      maxTokens: 4096
+
+  - name: Autocomplete
+    provider: ollama
+    # A base model, not an instruct model. Fill-in-the-middle completion needs
+    # the raw variant; the instruct tag will answer inline suggestions with
+    # chatty prose and ruin the feature.
+    model: qwen2.5-coder:1.5b-base
+    apiBase: http://ollama:11434
+    roles:
+      - autocomplete
+
+  - name: Embeddings
+    provider: ollama
+    model: nomic-embed-text
+    apiBase: http://ollama:11434
+    roles:
+      - embed
+
+context:
+  - provider: code
+  - provider: file
+  - provider: diff
+  - provider: terminal
+  - provider: problems
+  - provider: folder
+  - provider: codebase
