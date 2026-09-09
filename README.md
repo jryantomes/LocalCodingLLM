@@ -45,6 +45,35 @@ filesystem lives in RAM and is rebuilt on every boot, so anything left in
 which carries no Unix permission bits, so a clone there arrives with the
 executable bit stripped off both scripts and `./setup.sh` simply will not run.
 
+While this repository is private, that clone will stop at an authentication
+prompt, and GitHub has not accepted account passwords over HTTPS for years.
+Either make the repository public — there is nothing secret in it, since `.env`
+is generated on the server and never committed — or clone with a personal
+access token from <https://github.com/settings/tokens>, scope `repo`:
+
+```
+git clone https://<token>@github.com/jryantomes/LocalCodingLLM.git \
+  /mnt/user/appdata/localcodingllm
+```
+
+A token used that way is stored in plain text in `.git/config` inside the
+clone. To pull later without keeping it on disk, strip it once the clone is
+down:
+
+```
+git -C /mnt/user/appdata/localcodingllm remote set-url origin \
+  https://github.com/jryantomes/LocalCodingLLM.git
+```
+
+Do not reach for `git config --global credential.helper store` here. It writes
+to `/root`, which Unraid rebuilds on every boot, so the credential is gone the
+next time the server restarts and the failure looks like it came from nowhere.
+
+You can also skip git altogether. These are seven small files; downloading the
+repository as a zip from the GitHub web interface and unpacking it onto the
+share works exactly as well, as long as you restore the executable bit
+afterwards with `chmod +x setup.sh pull-models.sh`.
+
 `setup.sh` checks the host, writes a `.env`, asks you for a code-server
 password, creates the directories, brings the stack up, installs the Continue
 extension and downloads models sized to your GPU. The model download is the
