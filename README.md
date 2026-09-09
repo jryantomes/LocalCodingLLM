@@ -45,11 +45,11 @@ filesystem lives in RAM and is rebuilt on every boot, so anything left in
 which carries no Unix permission bits, so a clone there arrives with the
 executable bit stripped off both scripts and `./setup.sh` simply will not run.
 
-While this repository is private, that clone will stop at an authentication
-prompt, and GitHub has not accepted account passwords over HTTPS for years.
-Either make the repository public — there is nothing secret in it, since `.env`
-is generated on the server and never committed — or clone with a personal
-access token from <https://github.com/settings/tokens>, scope `repo`:
+If the repository is private, that clone stops at an authentication prompt,
+and GitHub has not accepted account passwords over HTTPS for years. Nothing in
+here is secret — `.env` is generated on the server and never committed — so
+making it public is the simplest fix. Otherwise clone with a personal access
+token from <https://github.com/settings/tokens>, scope `repo`:
 
 ```
 git clone https://<token>@github.com/jryantomes/LocalCodingLLM.git \
