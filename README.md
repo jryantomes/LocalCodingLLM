@@ -157,6 +157,49 @@ Aider is also worth knowing about if you prefer a terminal agent — it drives
 Ollama directly with `--model ollama_chat/<model>` and needs nothing added to
 this stack.
 
+## Adding Claude Code for the hard problems
+
+Local models and a frontier model are not an either/or. Claude Code installs
+into the code-server container and works on the same files Continue does, so
+you can stay local by default and reach for it when a problem is genuinely
+beyond a 14B model.
+
+It goes inside code-server rather than in a container of its own for one
+reason: the linuxserver image sets `HOME` to `/config`, which is a persisted
+volume. The installer writes to `~/.local`, so the install and its login
+survive both restarts and image updates without any extra plumbing.
+
+In a code-server terminal:
+
+```
+curl -fsSL https://claude.ai/install.sh | bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+exec bash
+claude
+```
+
+The first `claude` run prints a URL. Open it in your own browser, approve, and
+paste the code back. Claude Code needs a Pro, Max, Team, Enterprise or Console
+account; the free tier does not include it. To use an API key instead, set
+`ANTHROPIC_API_KEY` before the first run and it asks you to approve the key
+rather than opening a browser.
+
+Note the trade you are making when you use it. Claude Code sends the code it is
+working on to Anthropic. Everything else in this stack stays on your LAN, so
+keep the two straight in your head and reach for the local models by default.
+
+### Claude Code will not drive Ollama
+
+A reasonable-sounding idea that does not work. Claude Code speaks to Anthropic,
+Amazon Bedrock, Google Cloud and Microsoft Foundry, and Ollama is none of
+those; its API is a different shape, so pointing `ANTHROPIC_BASE_URL` at
+port 11434 fails rather than degrading.
+
+Even with a translation layer it would disappoint. Claude Code's agent loop
+leans hard on the model calling tools correctly dozens of times in a row, and
+that is exactly where a 14B model is weakest. Use Continue for the local
+models. It is built for them.
+
 ## What this is and is not
 
 Local models have got genuinely good, and the ones here will handle a
